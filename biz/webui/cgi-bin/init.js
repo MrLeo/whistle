@@ -7,7 +7,6 @@ var ca = require('../../../lib/https/ca');
 var proxy = require('../lib/proxy');
 
 var properties = rulesUtil.properties;
-var getUploadFiles = rulesUtil.values.getUploadFiles;
 var logger = proxy.logger;
 var pluginMgr = proxy.pluginMgr;
 
@@ -17,6 +16,7 @@ module.exports = function(req, res) {
 
   util.sendGzip(req, res, {
     version: config.version,
+    epm: config.epm,
     custom1: properties.get('Custom1'),
     custom2: properties.get('Custom2'),
     hasInvalidCerts: ca.hasInvalidCerts,
@@ -32,7 +32,7 @@ module.exports = function(req, res) {
     mvaluesTime: config.mvaluesTime,
     latestVersion: properties.getLatestVersion('latestVersion'),
     server: util.getServerInfo(req),
-    uploadFiles: getUploadFiles(),
+    hasARules: rulesUtil.hasAccountRules ? 1 : undefined,
     rules: getRules(),
     values: getValues(),
     interceptHttpsConnects: properties.isEnableCapture(),

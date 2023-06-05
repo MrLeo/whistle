@@ -9,6 +9,7 @@ var columns = require('./columns');
 var dataCenter = require('./data-center');
 var events = require('./events');
 var util = require('./util');
+var win = require('./win');
 var storage = require('./storage');
 
 var NOT_EMPTY_STYLE = { backgroundColor: 'lightyellow' };
@@ -30,8 +31,13 @@ var Settings = React.createClass({
     this.setState({ columns: columns.getAllColumns() });
   },
   resetColumns: function () {
-    columns.reset();
-    this.onColumnsResort();
+    var self = this;
+    win.confirm('Are you sure to reset the columns of network table?', function(sure) {
+      if (sure) {
+        columns.reset();
+        self.onColumnsResort();
+      }
+    });
   },
   componentDidMount: function () {
     var self = this;
@@ -115,10 +121,12 @@ var Settings = React.createClass({
     var self = this;
     self.refs.editCustomColumn.show();
     var name = e.target.getAttribute('data-name');
+    var lname = name.toLowerCase();
     self.setState(
       {
         name: name,
-        value: dataCenter[name.toLowerCase()],
+        value: dataCenter[lname],
+        key: dataCenter[lname + 'Key'] || '',
         nameChanged: false
       },
       function () {
@@ -137,15 +145,24 @@ var Settings = React.createClass({
       nameChanged: true
     });
   },
+  onKeyChange: function(e) {
+    var value = e.target.value;
+    this.setState({
+      key: value.replace(/\s+/, ''),
+      nameChanged: true
+    });
+  },
   changeName: function () {
     var self = this;
     var state = self.state;
     var name = state.name;
     var value = state.value;
+    var key = state.key;
     dataCenter.setCustomColumn(
       {
         name: name,
-        value: value
+        value: value,
+        key: key
       },
       function (data, xhr) {
         if (!data) {
@@ -153,7 +170,9 @@ var Settings = React.createClass({
           return;
         }
         self.refs.editCustomColumn.hide();
-        dataCenter[name.toLowerCase()] = value;
+        name = name.toLowerCase();
+        dataCenter[name] = value;
+        dataCenter[name + 'Key'] = key;
         self.setState({});
         events.trigger('onColumnTitleChange');
       }
@@ -200,7 +219,7 @@ var Settings = React.createClass({
               onKeyDown={self.onFilterKeyDown}
               value={state.excludeText}
               data-name="excludeText"
-              placeholder="type filter text"
+              placeholder="Type filter text"
               style={!state.disabledExcludeText && NOT_EMPTY_RE.test(state.excludeText) ? NOT_EMPTY_STYLE : undefined}
               maxLength={dataCenter.MAX_EXCLUDE_LEN}
             />
@@ -229,7 +248,7 @@ var Settings = React.createClass({
               onKeyDown={self.onFilterKeyDown}
               value={state.filterText}
               data-name="filterText"
-              placeholder="type filter text"
+              placeholder="Type filter text"
               style={!state.disabledFilterText && NOT_EMPTY_RE.test(state.filterText) ? NOT_EMPTY_STYLE : undefined}
               maxLength={dataCenter.MAX_INCLUDE_LEN}
             />
@@ -242,6 +261,9 @@ var Settings = React.createClass({
               </label>
             </legend>
             {columnList.map(function (col) {
+              if (col.isPlugin) {
+                return;
+              }
               var name = col.name;
               var canEdit1 = name === 'custom1';
               var canEdit = canEdit1 || name === 'custom2';
@@ -277,9 +299,7 @@ var Settings = React.createClass({
                       data-name={col.title}
                       title={'Edit ' + col.title}
                       className="glyphicon glyphicon-edit"
-                    >
-                      {canEdit1 ? 1 : 2}
-                    </span>
+                    />
                   ) : undefined}
                 </label>
               );
@@ -349,14 +369,24 @@ var Settings = React.createClass({
               <span aria-hidden="true">&times;</span>
             </button>
             <label>
-              New {state.name} Name:
+              <span>Column Name:</span>
               <input
                 onChange={this.onNameChange}
                 ref="newColumnName"
                 value={state.value}
                 className="form-control"
                 maxLength="16"
-                placeholder="Input the new column name"
+                placeholder="Input the custom column name"
+              />
+            </label>
+            <label>
+            <span>Data Key:</span>
+              <input
+                onChange={this.onKeyChange}
+                value={state.key}
+                className="form-control"
+                maxLength="72"
+                placeholder="Input the key of data (as: res.headers.x-server ...)"
               />
             </label>
           </div>

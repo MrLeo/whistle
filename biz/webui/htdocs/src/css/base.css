@@ -7,7 +7,7 @@ body,
   height: 100%;
 }
 #container {
-  min-width: 1100px;
+  min-width: 1075px; /* 兼容竖屏 */
   min-height: 560px;
 }
 ::-webkit-scrollbar {
@@ -102,6 +102,9 @@ textarea {
 }
 .hide {
   display: none !important;
+}
+.visible {
+  visibility: visible!important;
 }
 .box {
   display: -webkit-box;

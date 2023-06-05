@@ -8,27 +8,19 @@ var commonUtil = require('../lib/util/common');
 
 var getWhistlePath = commonUtil.getWhistlePath;
 var REMOTE_URL_RE = commonUtil.REMOTE_URL_RE;
+var WHISTLE_PLUGIN_RE = commonUtil.WHISTLE_PLUGIN_RE;
+const getPlugins = commonUtil.getPlugins;
 var CMD_SUFFIX = process.platform === 'win32' ? '.cmd' : '';
 var CUSTOM_PLUGIN_PATH = path.join(getWhistlePath(), 'custom_plugins');
+var DEFAULT_PATH = commonUtil.getDefaultWhistlePath();
+var REGISTRY_LIST = path.join(DEFAULT_PATH, '.registry.list');
 var PACKAGE_JSON = '{"repository":"https://github.com/avwo/whistle","license":"MIT"}';
 var LICENSE = 'Copyright (c) 2019 avwo';
 var RESP_URL = 'https://github.com/avwo/whistle';
-var WHISTLE_PLUGIN_RE = /^((?:@[\w-]+\/)?whistle\.[a-z\d_-]+)(?:\@([\w.^~*-]*))?$/;
+var MAX_REG_COUNT = 100;
 
 function getInstallPath(name, dir) {
   return path.join(dir || CUSTOM_PLUGIN_PATH, name);
-}
-
-function getPlugins(argv, isInstall) {
-  return argv.filter(function(name, i) {
-    if (WHISTLE_PLUGIN_RE.test(name)) {
-      return true;
-    }
-    if (argv[i - 1] === '--registry') {
-      return false;
-    }
-    return isInstall && REMOTE_URL_RE.test(name);
-  });
 }
 
 function removeDir(installPath) {
@@ -104,7 +96,8 @@ function install(cmd, name, argv, ver, pluginsCache, callback) {
       callback();
     } else {
       if (!isPkg) {
-        var deps = fse.readJsonSync(path.join(installPath, 'package.json')).dependencies;
+        var deps = commonUtil.readJsonSync(path.join(installPath, 'package.json'));
+        deps = deps && deps.dependencies;
         name = deps && getPluginNameFormDeps(deps);
       }
       if (!name) {
@@ -136,13 +129,15 @@ function install(cmd, name, argv, ver, pluginsCache, callback) {
   });
 }
 
-function readJson(pkgPath) {
-  try {
-    return fse.readJsonSync(pkgPath);
-  } catch (e) {
-    try {
-      return fse.readJsonSync(pkgPath);
-    } catch (e) {}
+function getRegistry(argv) {
+  for (var i = 0, len = argv.length; i < len; i++) {
+    var name = argv[i];
+    if (name === '--registry') {
+      return commonUtil.getRegistry(argv[i + 1]);
+    }
+    if (/^--registry=(.+)/.test(name)) {
+      return commonUtil.getRegistry(RegExp.$1);
+    }
   }
 }
 
@@ -150,9 +145,10 @@ function installPlugins(cmd, plugins, argv, pluginsCache, deep) {
   deep = deep || 0;
   var count = 0;
   var peerPlugins = [];
+  var registry = getRegistry(argv);
   var callback = function(pkgPath) {
     if (pkgPath) {
-      var pkg = readJson(pkgPath) || {};
+      var pkg = commonUtil.readJsonSync(pkgPath) || {};
       var list = pkg.whistleConfig && (pkg.whistleConfig.peerPluginList || pkg.whistleConfig.peerPlugins);
       if (Array.isArray(list) && list.length < 16) {
         list.forEach(function(name) {
@@ -164,6 +160,32 @@ function installPlugins(cmd, plugins, argv, pluginsCache, deep) {
             }
           }
         });
+      }
+      if (registry) {
+        try {
+          fse.ensureDirSync(DEFAULT_PATH);
+        } catch (e) {}
+        var regList = commonUtil.readJsonSync(REGISTRY_LIST);
+        var result = [registry];
+        registry = null;
+        if (Array.isArray(regList)) {
+          regList.forEach(function(url) {
+            url = commonUtil.getRegistry(url);
+            if (url && result.indexOf(url) === -1) {
+              result.push(url);
+            }
+          });
+        }
+        try {
+          if (REGISTRY_LIST.length > MAX_REG_COUNT) {
+            REGISTRY_LIST = REGISTRY_LIST.slice(0, MAX_REG_COUNT);
+          }
+          fse.writeJsonSync(REGISTRY_LIST, result);
+        } catch (e) {
+          try {
+            fse.writeJsonSync(REGISTRY_LIST, result);
+          } catch (e) {}
+        }
       }
     }
     if (--count <= 0 && deep < 16) {

@@ -36,15 +36,26 @@ function getPlugin(win) {
 function getBridge(win) {
   var plugin = getPlugin(win);
   return {
+    updateUI: function() {
+      events.trigger('updateUIThrottle');
+    },
     pageId: dataCenter.getPageId(),
+    escapeHtml: util.escape,
     compose: dataCenter.compose,
     importSessions: dataCenter.importAnySessions,
+    exportSessions:  dataCenter.exportSessions,
     msgBox: message,
     qrCode: qrCode,
     qrcode: qrCode,
     decodeBase64: util.decodeBase64,
     alert: mockWin.alert,
     confirm: mockWin.confirm,
+    copyText: function(text, tips) {
+      var btn = $('#copyTextBtn');
+      btn.attr('data-clipboard-text', text);
+      btn.removeClass().addClass('w-copy-text' + (tips ? '-with-tips' : ''));
+      btn.trigger('click');
+    },
     syncData: function(cb) {
       plugin && dataCenter.syncData(plugin, cb);
     },

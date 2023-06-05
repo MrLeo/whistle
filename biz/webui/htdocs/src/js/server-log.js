@@ -12,7 +12,7 @@ var events = require('./events');
 var DropDown = require('./dropdown');
 var win = require('./win');
 
-var MAX_COUNT = 90;
+var MAX_COUNT = dataCenter.MAX_LOG_LENGTH;
 var MAX_FILE_SIZE = 1024 * 1024 * 2;
 
 var ServerLog = React.createClass({
@@ -119,6 +119,7 @@ var ServerLog = React.createClass({
   clearLogs: function () {
     var data = this.state.logs;
     data && data.splice(0, data.length);
+    dataCenter.clearedSvrLogs = true;
     this.setState({});
   },
   stopAutoRefresh: function () {
@@ -155,9 +156,9 @@ var ServerLog = React.createClass({
   onServerFilterChange: function (keyword) {
     var self = this;
     keyword = keyword.trim();
-    self.keyword = keyword;
     var serverKeyword = util.parseKeyword(keyword);
     var logs = self.state.logs;
+    self.keyword = keyword && serverKeyword;
     util.filterLogList(logs, serverKeyword);
     if (!keyword) {
       var len = logs && logs.length - MAX_COUNT;

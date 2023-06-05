@@ -15,7 +15,7 @@ var events = require('./events');
 var storage = require('./storage');
 var win = require('./win');
 
-var MAX_COUNT = 90;
+var MAX_COUNT = dataCenter.MAX_LOG_LENGTH;
 var MAX_FILE_SIZE = 1024 * 1024 * 2;
 
 var allLogs = {
@@ -180,6 +180,7 @@ var Console = React.createClass({
   clearLogs: function () {
     var data = this.state.logs;
     data && data.splice(0, data.length);
+    dataCenter.clearedLogs = true;
     this.setState({});
   },
   scrollTop: function () {
@@ -217,9 +218,9 @@ var Console = React.createClass({
   onConsoleFilterChange: function (keyword) {
     var self = this;
     keyword = keyword.trim();
-    self.keyword = keyword;
     var logs = self.state.logs;
     var consoleKeyword = util.parseKeyword(keyword);
+    self.keyword = keyword && consoleKeyword;
     util.filterLogList(logs, consoleKeyword);
     if (!keyword) {
       var len = logs && logs.length - MAX_COUNT;

@@ -1,5 +1,6 @@
 require('./base-css.js');
 require('../css/list.css');
+require('../css/files-dialog.css');
 var $ = require('jquery');
 var util = require('./util');
 var React = require('react');
@@ -504,13 +505,22 @@ var List = React.createClass({
       break;
     case 'Plugins':
       var modal = self.props.modal;
+      var activeItem = self.currentFocusItem;
       iframes.fork(action, {
         port: dataCenter.getPort(),
         type: self.props.name === 'rules' ? 'rules' : 'values',
         name: menuName,
         list: modal && modal.getList(),
-        activeItem: self.currentFocusItem,
-        selectedItem: modal && modal.getActive()
+        activeItem: activeItem,
+        selectedItem: modal && modal.getActive(),
+        setValue: function(value) {
+          value = value || '';
+          if (activeItem && value != activeItem.value) {
+            activeItem.changed = true;
+            activeItem.value = value;
+            events.trigger('updateGlobal');
+          }
+        }
       });
       break;
     }

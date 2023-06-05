@@ -6,7 +6,7 @@ var base64Decode = jsBase64.decode;
 var base64Encode = jsBase64.encode;
 var toBase64 = jsBase64.toBase64;
 var json2 = require('./components/json');
-var evalJson = require('./components/json/eval');
+var events = require('./events');
 var isUtf8 = require('./is-utf8');
 var message = require('./message');
 var win = require('./win');
@@ -24,6 +24,7 @@ var ARR_FILED_RE = /(.)?(?:\[(\d+)\])$/;
 var LEVELS = ['fatal', 'error', 'warn', 'info', 'debug'];
 var MAX_CURL_BODY = 1024 * 72;
 var useCustomEditor = window.location.search.indexOf('useCustomEditor') !== -1;
+var JSON_RE = /^\s*(?:\{[\w\W]*\}|\[[\w\W]*\])\s*$/;
 var isJSONText;
 
 function replaceCrLf(char) {
@@ -36,6 +37,12 @@ function noop(_) {
 
 exports.noop = noop;
 
+function likeJson(str) {
+  return str && JSON_RE.test(str);
+}
+
+exports.likeJson = likeJson;
+
 function compare(v1, v2) {
   return v1 == v2 ? 0 : v1 > v2 ? -1 : 1;
 }
@@ -44,7 +51,7 @@ function comparePlugin(p1, p2) {
   return (
     compare(p1.priority, p2.priority) ||
     compare(p2.mtime, p1.mtime) ||
-    (p1._key > p2._key ? 1 : -1)
+    (p1._key > p2._key ? 1 : (p1._key == p2._key ? 0 : -1))
   );
 }
 
@@ -58,6 +65,8 @@ exports.isString = function (str) {
 function notEStr(str) {
   return str && typeof str === 'string';
 }
+
+exports.notEStr = notEStr;
 
 exports.parseLogs = function (str) {
   try {
@@ -125,7 +134,20 @@ exports.getBase64FromHexText = function (str, check) {
 
 function stopDrag() {
   dragCallback = dragTarget = dragOffset = null;
+  hideIFrameMask();
 }
+
+function showIFrameMask(hideByHover) {
+  var mask = $('.w-iframe-mask').show();
+  hideByHover && mask.parent().attr('allow-dragover', 1);
+}
+
+function hideIFrameMask() {
+  $('.w-iframe-mask').hide().parent().removeAttr('allow-dragover');
+}
+
+exports.showIFrameMask = showIFrameMask;
+exports.hideIFrameMask = hideIFrameMask;
 
 $(document)
   .on('mousedown', function (e) {
@@ -144,6 +166,7 @@ $(document)
       return;
     }
     dragOffset = e;
+    showIFrameMask();
     e.preventDefault();
   })
   .on('mousemove', function (e) {
@@ -268,6 +291,16 @@ function getServerIp(modal) {
   }
   return modal.serverIp || ip;
 }
+
+function getCellValue(item, col) {
+  var name = col.name;
+  if (name === 'hostIp') {
+    return getServerIp(item);
+  }
+  return col.key ? getProperty(item, col.key) : item[name];
+}
+
+exports.getCellValue = getCellValue;
 
 exports.getServerIp = getServerIp;
 
@@ -571,8 +604,6 @@ var parseJ = function (str, resolve) {
   return typeof result === 'object' ? result : null;
 };
 
-exports.evalJson = evalJson;
-
 function parseJSON(str, resolve) {
   isJSONText = false;
   if (typeof str !== 'string' || !(str = str.trim())) {
@@ -590,9 +621,7 @@ function parseJSON(str, resolve) {
   }
   try {
     return parseJ(str, resolve);
-  } catch (e) {
-    return evalJson(str);
-  }
+  } catch (e) {}
 }
 
 exports.parseJSON = parseJSON;
@@ -868,6 +897,32 @@ function toString(value) {
 
 exports.toString = toString;
 
+exports.getValue = function(item, key) {
+  key = key.split('.');
+  var len = key.length;
+  var value;
+  if (len > 1) {
+    value = item;
+    for (var i = 0; i < len; i++) {
+      var origVal = value;
+      value = origVal[key[i]];
+      if (value == null) {
+        value = origVal[key[i].toLowerCase()];
+        if (value == null) {
+          break;
+        }
+      }
+    }
+  } else {
+    value = item[key[0]];
+  }
+  if (value == null) {
+    return '';
+  }
+  value = String(value);
+  return value.length > 1690 ? value.substring(0, 1680) + '...' : value;
+};
+
 function openEditor(value) {
   if (
     useCustomEditor &&
@@ -876,13 +931,7 @@ function openEditor(value) {
   ) {
     return;
   }
-  var win = window.open('editor.html');
-  win.getValue = function () {
-    return value;
-  };
-  if (win.setValue) {
-    win.setValue(value);
-  }
+  events.trigger('openEditor', value);
 }
 
 exports.openEditor = openEditor;
@@ -969,6 +1018,13 @@ exports.canAbort = function (item) {
   return !!item.frames && !socketIsClosed(item);
 };
 
+function formatBody(body) {
+  if (body.indexOf('\'') === -1) {
+    return '\'' + body + '\'';
+  }
+  return '"' + body.replace(/"/g, '\\"') + '"';
+}
+
 exports.asCURL = function (item) {
   if (!item) {
     return item;
@@ -994,7 +1050,7 @@ exports.asCURL = function (item) {
   });
   var body = getBody(req, true);
   if (body && (body.length <= MAX_CURL_BODY || isText(req.headers) || isUrlEncoded(req))) {
-    result.push('-d', JSON.stringify(body));
+    result.push('-d', formatBody(body));
   }
   return result.join(' ');
 };
@@ -1336,7 +1392,7 @@ function initData(data, isReq) {
   }
 }
 
-exports.getJson = function (data, isReq, decode) {
+function getJson(data, isReq, decode) {
   if (data[JSON_KEY] == null) {
     var body = getBody(data, isReq);
     body = body && resolveJSON(body, decode);
@@ -1353,6 +1409,13 @@ exports.getJson = function (data, isReq, decode) {
       : '';
   }
   return data[JSON_KEY];
+}
+
+exports.getJson = getJson;
+
+exports.getJsonStr = function(data, isReq, decode) {
+  var json = getJson(data, isReq, decode);
+  return json && json.str;
 };
 
 function getBody(data, isReq) {
@@ -1412,9 +1475,6 @@ function parseRawJson(str, quite) {
     }
     !quite && message.error('Error: not a json object.');
   } catch (e) {
-    if ((json = evalJson(str))) {
-      return json;
-    }
     !quite && message.error('Error: ' + e.message);
   }
 }
@@ -1624,7 +1684,7 @@ exports.readFileAsText = function (file, callback) {
   return readFile(file, callback, 'text');
 };
 
-exports.addPluginMenus = function (item, list, maxTop, disabled) {
+exports.addPluginMenus = function (item, list, maxTop, disabled, treeId) {
   var pluginsList = (item.list = list);
   var count = pluginsList.length;
   if (count) {
@@ -1632,9 +1692,10 @@ exports.addPluginMenus = function (item, list, maxTop, disabled) {
     var disabledOthers = disabled;
     for (var j = 0; j < count; j++) {
       var plugin = pluginsList[j];
-      if (plugin.required) {
-        plugin.disabled = disabled;
-        if (!disabled) {
+      if (plugin.required || plugin.requiredTreeNode) {
+        var disd = disabled && (!plugin.requiredTreeNode || !treeId);
+        plugin.disabled = disd;
+        if (!disd) {
           disabledOthers = false;
         }
       } else {
@@ -2237,6 +2298,7 @@ exports.toHar = function (item) {
   return {
     startedDateTime: new Date(item.startTime).toISOString(),
     time: time,
+    whistleCustomData: item.customData,
     whistleRules: item.rules,
     whistleFwdHost: item.fwdHost,
     whistleSniPlugin: item.sniPlugin,
@@ -2323,4 +2385,50 @@ exports.getRawUrl = function (item) {
 
 exports.isGroup = function(name) {
   return name && name[0] === '\r';
+};
+
+function filterJson(obj, keyword, filterType) {
+  if (obj == null) {
+    return false;
+  }
+  var type = typeof obj;
+  var isKey = filterType === 1;
+  if (type === 'string' || type === 'number' || type === 'boolean') {
+    return !isKey && String(obj).toLowerCase().indexOf(keyword) !== -1;
+  }
+  if (type !== 'object') {
+    return false;
+  }
+  if (Array.isArray(obj)) {
+    for (var i = obj.length - 1; i >=0; i--) {
+      if (!filterJson(obj[i], keyword, filterType)) {
+        obj.splice(i, 1);
+      }
+    }
+    return obj.length;
+  }
+  Object.keys(obj).forEach(function(key) {
+    var isVal = filterType > 1;
+    var hasKey = !isVal && key.toLowerCase().indexOf(keyword) !== -1;
+    if (isKey && hasKey) {
+      return true;
+    }
+    if (!filterJson(obj[key], keyword, filterType) && !hasKey) {
+      delete obj[key];
+    }
+  });
+  return Object.keys(obj).length;
+}
+
+exports.filterJsonText = function(str, keyword, filterType) {
+  keyword = keyword.trim().toLowerCase();
+  var obj;
+  if (keyword) {
+    if (str.toLowerCase().indexOf(keyword) === -1) {
+      return {};
+    }
+    obj = JSON.parse(str);
+    filterJson(obj, keyword, filterType);
+  }
+  return obj;
 };

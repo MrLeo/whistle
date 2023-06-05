@@ -5,14 +5,20 @@ var ReactDOM = require('react-dom');
 var TextView = require('./textview');
 var CopyBtn = require('./copy-btn');
 var message = require('./message');
+var ContextMenu = require('./context-menu');
 var win = require('./win');
 
 var JSONTree = require('./components/react-json-tree')['default'];
 var dataCenter = require('./data-center');
 var util = require('./util');
+var events = require('./events');
 var MAX_LENGTH = 1024 * 16;
 var STR_SELECTOR = 'span[style="color: rgb(133, 153, 0);"]';
 var LINK_RE = /^"(https?:)?(\/\/[^/]\S+)"$/i;
+var contextMenuList = [
+  { name: 'Expand All' },
+  { name: 'Collapse All' }
+];
 
 function compare(a, b) {
   return a > b ? 1 : -1;
@@ -29,12 +35,46 @@ var JsonViewer = React.createClass({
   preventBlur: function (e) {
     e.target.nodeName != 'INPUT' && e.preventDefault();
   },
-  edit: function () {
+  getCurStr: function() {
     var data = this.props.data;
-    var str = data && data.str;
+    return data && data.str;
+  },
+  edit: function () {
+    var str = this.getCurStr();
     if (str) {
       util.openEditor(str);
     }
+  },
+  onContextMenu: function(e) {
+    var ctxMenu = util.getMenuPosition(e, 110, 60);
+    ctxMenu.list = contextMenuList;
+    this.refs.contextMenu.show(ctxMenu);
+    e.preventDefault();
+  },
+  onClickContextMenu: function(action) {
+    if (action === 'Expand All') {
+      this.expandAll();
+    } else if (action === 'Collapse All') {
+      this.collapseAll();
+    }
+  },
+  search: function() {
+    var str = this.getCurStr();
+    if (str) {
+      events.trigger('showJsonViewDialog', str);
+    }
+  },
+  showMockDialog: function(e) {
+    var self = this;
+    var props = self.props;
+    var reqData = props.reqData;
+    if (reqData) {
+      return events.trigger('showMockDialog', {
+        type: props.reqType,
+        item: reqData
+      });
+    }
+    self.showNameInput(e);
   },
   showNameInput: function (e) {
     var self = this;
@@ -145,6 +185,32 @@ var JsonViewer = React.createClass({
         }
       });
   },
+  expandAll: function() {
+    var expandedStatus = this.state.expandedStatus || 0;
+    ++expandedStatus;
+    this.setState({
+      expandedStatus: expandedStatus,
+      shouldExpandNode: function() {
+        return expandedStatus;
+      }
+    });
+  },
+  collapseAll: function() {
+    var expandedStatus = this.state.expandedStatus;
+    if (expandedStatus) {
+      expandedStatus = false;
+    } else if (expandedStatus === false) {
+      expandedStatus = 0;
+    } else {
+      expandedStatus = false;
+    }
+    this.setState({
+      expandedStatus: expandedStatus,
+      shouldExpandNode: function() {
+        return expandedStatus;
+      }
+    });
+  },
   render: function () {
     var state = this.state;
     var viewSource = state.viewSource;
@@ -184,14 +250,16 @@ var JsonViewer = React.createClass({
           >
             Download
           </a>
-          <a className="w-add" onClick={this.showNameInput} draggable="false">
-            +Key
+          <a style={{display: dataCenter.hideMockMenu ? 'none' : null}} className="w-add" onClick={this.showMockDialog} draggable="false">
+            { props.reqData ? 'Mock' : '+Key' }
           </a>
           {viewSource ? (
             <a className="w-edit" onClick={this.edit} draggable="false">
               ViewAll
             </a>
-          ) : undefined}
+          ) : (props.dialog ? undefined : <a className="w-edit" onClick={this.search} draggable="false">
+                Search
+              </a>)}
           <a onClick={this.toggle} className="w-properties-btn">
             {viewSource ? 'JSON' : 'Text'}
           </a>
@@ -235,10 +303,13 @@ var JsonViewer = React.createClass({
         />
         <div
           ref="jsonViewer"
+          onContextMenu={this.onContextMenu}
           className={'fill w-json-viewer-tree' + (viewSource ? ' hide' : '')}
         >
-          <JSONTree data={data.json} sortObjectKeys={compare} />
+          <JSONTree data={data.json} sortObjectKeys={compare} shouldExpandNode={state.shouldExpandNode}
+            expandAll={this.expandAll} collapseAll={this.collapseAll} />
         </div>
+        <ContextMenu onClick={this.onClickContextMenu} ref="contextMenu" />
       </div>
     );
   }
